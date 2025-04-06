@@ -36,5 +36,4 @@ wheels/
 Thumbs.db
 
 # Project specific
-ProjDataset/
 vallex-checkpoint.pt 
