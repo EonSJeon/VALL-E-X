@@ -30,8 +30,8 @@ from macros import *
 device = torch.device("cpu")
 if torch.cuda.is_available():
     device = torch.device("cuda", 0)
-if torch.backends.mps.is_available():
-    device = torch.device("mps")
+# if torch.backends.mps.is_available():
+#     device = torch.device("mps")
 url = 'https://huggingface.co/Plachta/VALL-E-X/resolve/main/vallex-checkpoint.pt'
 
 checkpoints_dir = "./checkpoints/"
@@ -76,7 +76,8 @@ def preload_models():
         prepend_bos=True,
         num_quantizers=NUM_QUANTIZERS,
     ).to(device)
-    checkpoint = torch.load(os.path.join(checkpoints_dir, model_checkpoint_name), map_location='cpu')
+    checkpoint = torch.load(os.path.join(checkpoints_dir, model_checkpoint_name), map_location='cpu', weights_only=False)
+
     missing_keys, unexpected_keys = model.load_state_dict(
         checkpoint["model"], strict=True
     )
