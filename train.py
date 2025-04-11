@@ -52,6 +52,8 @@ from train_utils.lhotse.utils import *
 from test import get_model
 from customs.make_custom_dataset import create_dataset
 
+from peft import get_peft_model, LoraConfig, TaskType
+
 LRSchedulerType = torch.optim.lr_scheduler._LRScheduler
 
 
@@ -63,7 +65,6 @@ def set_batch_count(model: Union[nn.Module, DDP], batch_count: float) -> None:
     for module in model.modules():
         if hasattr(module, "batch_count"):
             module.batch_count = batch_count
-
 
 def get_parser():
     parser = argparse.ArgumentParser(
@@ -259,18 +260,17 @@ def get_parser():
     
     parser.add_argument(
         "--train_dir",
-        default='./customs/test_data'
+        default='./customs/train_data'
     )
     
     parser.add_argument(
         "--valid_dir",
-        default='./customs/test_data'
+        default='./customs/valid_data'
     )
 
     add_model_arguments(parser)
 
     return parser
-
 
 def get_params() -> AttributeDict:
     """Return a dict containing training parameters.
@@ -319,7 +319,6 @@ def get_params() -> AttributeDict:
     )
 
     return params
-
 
 def load_checkpoint_if_available(
     params: AttributeDict,
@@ -425,7 +424,6 @@ def load_checkpoint_if_available(
 
     return saved_params
 
-
 def save_checkpoint(
     params: AttributeDict,
     model: Union[nn.Module, DDP],
@@ -474,7 +472,6 @@ def save_checkpoint(
     if params.best_valid_epoch == params.cur_epoch:
         best_valid_filename = params.exp_dir / "best-valid-loss.pt"
         copyfile(src=filename, dst=best_valid_filename)
-
 
 def compute_loss(
     params: AttributeDict,
@@ -539,7 +536,6 @@ def compute_loss(
 
     return predicts, loss, info
 
-
 def compute_validation_loss(
     params: AttributeDict,
     model: Union[nn.Module, DDP],
@@ -576,7 +572,6 @@ def compute_validation_loss(
             model.visualize(predicts, batch, output_dir=output_dir)
 
     return tot_loss
-
 
 def train_one_epoch(
     params: AttributeDict,
@@ -860,7 +855,10 @@ def run(rank, world_size, args):
         # https://pytorch.org/docs/stable/notes/cuda.html#tensorfloat-32-tf32-on-ampere-devices
         torch.backends.cudnn.allow_tf32 = True
         torch.backends.cuda.matmul.allow_tf32 = True
-
+    elif torch.backends.mps.is_available():
+        device = torch.device("mps")
+    
+    print(device)
     logging.info(f"Device: {device}")
     logging.info(params)
 
@@ -869,6 +867,29 @@ def run(rank, world_size, args):
 
     num_param = sum([p.numel() for p in model.parameters()])
     logging.info(f"Number of model parameters: {num_param}")
+
+    # # ------------------------------
+    # # Apply LoRA using the PEFT package
+    # # ------------------------------
+    # # Freeze base model parameters to update only the LoRA layers
+    # for param in model.parameters():
+    #     param.requires_grad = False
+
+    # # Configure LoRA (adjust TaskType based on your specific model architecture)
+    # lora_config = LoraConfig(
+    #     task_type=TaskType.SEQ_2_SEQ_LM,  # or CAUSAL_LM if more appropriate
+    #     inference_mode=False,
+    #     r=8,
+    #     lora_alpha=32,
+    #     lora_dropout=0.1,
+    # )
+
+    # # Wrap the model with LoRA
+    # model = get_peft_model(model, lora_config)
+    # model.print_trainable_parameters()
+
+    # num_param = sum([p.numel() for p in model.parameters()])
+    # logging.info(f"Number of model parameters after PEFT wrapping: {num_param}")
 
     assert params.save_every_n >= params.average_period
     model_avg: Optional[nn.Module] = None
@@ -1022,7 +1043,6 @@ def run(rank, world_size, args):
     if world_size > 1:
         torch.distributed.barrier()
         cleanup_dist()
-
 
 def display_and_save_batch(
     batch: dict,

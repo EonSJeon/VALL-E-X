@@ -10,6 +10,7 @@ from utils.g2p import PhonemeBpeTokenizer
 from utils.prompt_making import make_prompt, make_transcript
 from data.collation import get_text_token_collater
 from data.dataset import create_dataloader
+import pandas as pd
 
 # Mappings from symbol to numeric ID and vice versa:
 _symbol_to_id = {s: i for i, s in enumerate(symbols)}
@@ -54,14 +55,19 @@ def create_dataset(data_dir, dataloader_process_only):
         h5_output_path=f"{data_dir}/audio_sum.hdf5"
         ann_output_path=f"{data_dir}/audio_ann_sum.txt"
         #audio_folder = os.path.join(data_dir, 'audio')
+
         audio_paths = glob.glob(f"{data_dir}/*.wav")  # Change this to match your audio file extension
+        transcript_df = get_transcript_csv(data_dir)
 
         # Create or open an HDF5 file
         with h5py.File(h5_output_path, 'w') as h5_file:
             # Loop through each audio and text file, assuming they have the same stem
             for audio_path in audio_paths:
                 stem = os.path.splitext(os.path.basename(audio_path))[0]
-                audio_tokens, text_tokens, langs, text = make_prompts(name=stem, audio_prompt_path=audio_path)
+                print(stem)
+                transcript = transcript_df[transcript_df['audio_path']==stem]['sentence'].values[0]
+                print(transcript)
+                audio_tokens, text_tokens, langs, text = make_prompts(name=stem, audio_prompt_path=audio_path, transcript=transcript)
                 
                 text_tokens = text_tokens.squeeze(0)
                 # Create a group for each stem
@@ -81,3 +87,17 @@ def create_dataset(data_dir, dataloader_process_only):
     else:
         dataloader = create_dataloader(data_dir=data_dir)
         return dataloader
+
+def get_transcript_csv(data_dir):
+    transcript_paths = glob.glob(f"{data_dir}/*.csv")
+    if len(transcript_paths) != 1:
+        raise ValueError(f"Only one transcript file is allowed in {data_dir}")
+    transcript_path = transcript_paths[0]
+    transcript_df = pd.read_csv(transcript_path)
+    transcript_df = transcript_df[transcript_df['status'] == 'processed']
+    # audio_path 컬럼에서 경로를 분리하고, 확장자를 제거하여 stem만 남김
+    transcript_df['audio_path'] = transcript_df['audio_path'].apply(
+        lambda x: os.path.splitext(x.split('/')[-1])[0]
+    )
+    transcript_df = transcript_df[['sentence', 'audio_path']]
+    return transcript_df
